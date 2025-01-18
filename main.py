@@ -9,6 +9,8 @@ import os
 import cloudinary
 from cloudinary import CloudinaryImage, uploader
 from dotenv import load_dotenv
+from inference_sdk import InferenceHTTPClient
+
 
 
 load_dotenv()
@@ -215,8 +217,83 @@ async def predict(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/predict/nails")
+async def predict_nails(file: UploadFile = File(...)):
+    try:
+        CLIENT = InferenceHTTPClient(
+            api_url="https://detect.roboflow.com",  # Changed to detect endpoint
+            api_key="2LNDEnBag8Yg9zWCLZXD"
+        )
+        
+        # Verify file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        
+        # Read image
+
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if image is None:
+            raise HTTPException(status_code=400, detail="Invalid image file")
+        
+        # Convert image to base64
+        _, buffer = cv2.imencode('.jpg', image)
+        img_str = base64.b64encode(buffer).decode()
+
+        # Run inference using the base64 image
+        result = CLIENT.infer(
+            img_str,
+            model_id="nail-disease-jmapt/1"
+        )
+        
+        predictions = result['predictions']
+
+        print(predictions)
+
+        for prediction in predictions:
+            x = prediction['x']
+            y = prediction['y']
+            w = prediction['width']
+            h = prediction['height']
+
+            x1 = int(x - w/2)
+            y1 = int(y - h/2)
+            x2 = int(x + w/2)
+            y2 = int(y + h/2)
+
+            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(image, f"{prediction['class']}: {prediction['confidence']:.2f}", (x1, y1-10), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            
+        # Convert image to base64
+        _, buffer = cv2.imencode('.jpg', image)
+        img_str = base64.b64encode(buffer).decode()
+
+        img_byte = io.BytesIO(buffer)
+
+        img_url = file_to_link(img_byte)
+
+
+
+        return {
+            "status": "success",
+            "predictions": result,
+            "annotated_image": img_url
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+
+
 # Test endpoint
 @app.get("/")
 async def root():
+
     return {"message": "API is running"}
 

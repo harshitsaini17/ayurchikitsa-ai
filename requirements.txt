@@ -5,3 +5,5 @@ fastapi
 azure-functions
 cloudinary
 dotenv
+inference-sdk
+uvicorn
